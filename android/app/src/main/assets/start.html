@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Limbus Archive</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0d0a09; color: #e8dccb; font-family: system-ui, sans-serif; padding: 28px 20px 40px; }
+  h1 { font-size: 26px; margin: 8px 0 4px; letter-spacing: .5px; }
+  h1 b { color: #d6a14a; }
+  .sub { opacity: .6; font-size: 13px; margin-bottom: 26px; }
+  .card { background: #1a1412; border: 1px solid #3a2b24; border-radius: 12px; padding: 18px; margin-bottom: 18px; }
+  .card h2 { font-size: 18px; margin: 0 0 6px; }
+  .card p { font-size: 13.5px; line-height: 1.5; opacity: .8; margin: 0 0 14px; }
+  button { width: 100%; padding: 14px; font-size: 16px; border: 0; border-radius: 8px; background: #7a1f1f; color: #fff; font-weight: 600; }
+  button.alt { background: #3a2b24; }
+  button:disabled { opacity: .5; }
+  label { display: block; font-size: 12.5px; opacity: .7; margin: 10px 0 4px; }
+  input { width: 100%; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #4a3a30; background: #0d0a09; color: #fff; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .btns { display: flex; gap: 10px; margin-top: 14px; }
+  .btns button { flex: 1; }
+  #msg { font-size: 13.5px; margin-top: 12px; min-height: 1em; white-space: pre-line; }
+  #msg.err { color: #ff8a7a; } #msg.ok { color: #9be39b; }
+  #found button { margin-top: 8px; background: #2a201c; font-weight: 400; font-size: 15px; }
+  details { font-size: 13px; opacity: .85; margin-top: 12px; }
+  details li { margin: 6px 0; line-height: 1.45; }
+  code { background: #2a201c; padding: 1px 5px; border-radius: 4px; }
+  .chk { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-top: 12px; opacity: .85; }
+  .chk input { width: auto; }
+</style>
+</head>
+<body>
+<h1>Limbus <b>Archive</b></h1>
+<div class="sub">모바일</div>
+
+<div class="card">
+  <h2>PC 연결 (전체 기능)</h2>
+  <p>PC에서 실행 중인 Limbus Archive에 연결합니다. 설정, 파일 탐색, 스냅샷, 스프라이트 작업실, 대전(Duel / Auto Battler / Online room / Mirror), 애니메이션 렌더링 등 <b>PC에서만 되던 기능을 모두</b> 폰에서 쓸 수 있습니다.</p>
+  <div class="row">
+    <div style="flex:2"><label>PC IP 주소</label><input id="ip" inputmode="decimal" placeholder="예: 192.168.0.10"></div>
+    <div><label>연결 포트</label><input id="relay" inputmode="numeric" value="47822"></div>
+  </div>
+  <details><summary>고급: PC 앱 포트</summary>
+    <label>PC 앱 서버 포트 (기본 47821)</label><input id="port" inputmode="numeric" value="47821">
+  </details>
+  <div class="btns"><button id="go">연결</button><button id="scan" class="alt">자동 찾기</button></div>
+  <label class="chk"><input type="checkbox" id="auto"> 다음부터 바로 이 PC에 연결</label>
+  <div id="msg"></div>
+  <div id="found"></div>
+  <details><summary>처음 한 번 PC에서 할 일</summary>
+    <ol>
+      <li>PC에서 <b>LimbusArchive.exe</b>를 실행해 둡니다 (창을 켜 둔 상태여야 합니다).</li>
+      <li>저장소의 <code>pc/enable-mobile.bat</code>을 PC에서 실행합니다 (관리자 권한 요청 → 예). 한 번만 하면 됩니다.</li>
+      <li>창에 표시된 PC IP를 위에 입력하고 <b>연결</b>을 누릅니다. 폰과 PC가 같은 Wi‑Fi여야 합니다.</li>
+      <li>밖에서 쓰려면 PC와 폰에 Tailscale을 설치하고 Tailscale IP(100.x.x.x)를 입력하세요.</li>
+    </ol>
+  </details>
+</div>
+
+<div class="card">
+  <h2>웹 버전</h2>
+  <p>PC 없이 limbus-archive.com에 접속합니다. 데이터베이스, 스토리, 게임, 계산기 등 공개된 기능만 사용할 수 있습니다.</p>
+  <button id="web" class="alt">웹 버전 열기</button>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const msg = (t, cls) => { $("msg").textContent = t; $("msg").className = cls || ""; };
+const s = JSON.parse(Native.saved());
+if (s.ip) $("ip").value = s.ip;
+if (s.relay) $("relay").value = s.relay;
+if (s.port) $("port").value = s.port;
+$("auto").checked = !!s.auto;
+if (s.error) msg(s.error, "err");
+
+function connect(ip) {
+  ip = (ip || $("ip").value).trim();
+  if (!ip) { msg("PC IP 주소를 입력하세요.", "err"); return; }
+  $("ip").value = ip;
+  $("go").disabled = true;
+  msg("연결 중…");
+  Native.connectPc(ip, parseInt($("relay").value) || 47822, parseInt($("port").value) || 47821, $("auto").checked);
+}
+window.onConnect = (ok, text) => { $("go").disabled = false; msg(text, ok ? "ok" : "err"); };
+window.onScan = (list, done) => {
+  $("found").innerHTML = list.map((ip) => `<button data-ip="${ip}">${ip} 에서 Limbus Archive 발견 → 연결</button>`).join("");
+  if (done) { $("scan").disabled = false; msg(list.length ? "" : "찾지 못했습니다. PC에서 앱과 enable-mobile.bat이 실행 중인지, 같은 Wi‑Fi인지 확인하세요.", list.length ? "" : "err"); }
+};
+$("found").addEventListener("click", (e) => { const b = e.target.closest("[data-ip]"); if (b) connect(b.dataset.ip); });
+$("go").onclick = () => connect();
+$("scan").onclick = () => { $("scan").disabled = true; $("found").innerHTML = ""; msg("같은 네트워크에서 찾는 중…"); Native.scan(parseInt($("relay").value) || 47822); };
+$("web").onclick = () => Native.openWeb();
+</script>
+</body>
+</html>
