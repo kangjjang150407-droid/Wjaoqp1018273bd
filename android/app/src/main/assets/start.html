@@ -13,7 +13,7 @@
   .card { background: #1a1412; border: 1px solid #3a2b24; border-radius: 12px; padding: 18px; margin-bottom: 18px; }
   .card h2 { font-size: 18px; margin: 0 0 6px; }
   .card p { font-size: 13.5px; line-height: 1.5; opacity: .8; margin: 0 0 14px; }
-  button { width: 100%; padding: 14px; font-size: 16px; border: 0; border-radius: 8px; background: #7a1f1f; color: #fff; font-weight: 600; }
+  button { width: 100%; padding: 14px 6px; font-size: 16px; word-break: keep-all; border: 0; border-radius: 8px; background: #7a1f1f; color: #fff; font-weight: 600; }
   button.alt { background: #3a2b24; }
   button:disabled { opacity: .5; }
   label { display: block; font-size: 12.5px; opacity: .7; margin: 10px 0 4px; }
@@ -35,6 +35,12 @@
 <body>
 <h1>Limbus <b>Archive</b></h1>
 <div class="sub">모바일</div>
+
+<div class="card">
+  <h2>바로 가기</h2>
+  <p>누르면 PC에 연결한 뒤 그 화면을 바로 엽니다. 애니메이션은 PC에 연결할 수 없으면 웹 버전(미리 렌더링된 영상)으로 열립니다.</p>
+  <div class="btns"><button data-go="#/versus">Duel</button><button data-go="#/anim">애니메이션</button><button data-go="#/browse">파일 탐색</button></div>
+</div>
 
 <div class="card">
   <h2>PC 연결 (전체 기능)</h2>
@@ -92,6 +98,12 @@ window.onScan = (list, done) => {
 $("found").addEventListener("click", (e) => { const b = e.target.closest("[data-ip]"); if (b) connect(b.dataset.ip); });
 $("go").onclick = () => connect();
 $("scan").onclick = () => { $("scan").disabled = true; $("found").innerHTML = ""; msg("같은 네트워크에서 찾는 중…"); Native.scan(parseInt($("relay").value) || 47822); };
+document.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => {
+  const h = b.dataset.go, ip = $("ip").value.trim();
+  if (!ip) { if (h === "#/anim") { Native.target(h, true); Native.openWeb(); } else msg("먼저 아래에 PC IP 주소를 입력하거나 자동 찾기를 누르세요.", "err"); return; }
+  Native.target(h, h === "#/anim");
+  connect(ip);
+});
 $("web").onclick = () => Native.openWeb();
 </script>
 </body>

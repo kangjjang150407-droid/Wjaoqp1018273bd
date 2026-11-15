@@ -76,6 +76,7 @@ public class MainActivity extends Activity {
     String home = START;        // the current mode's front page
     String pendingHash = null;  // "#/page" from a limbusarchive:// link
     String startError = null;
+    boolean webFallback = false; // a shortcut whose page the web edition has too
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -171,10 +172,18 @@ public class MainActivity extends Activity {
                     home = "http://127.0.0.1:" + pcPort + "/";
                     web.loadUrl(home + (pendingHash != null ? pendingHash : ""));
                     pendingHash = null;
+                    webFallback = false;
                     clearHistorySoon();
                     toast("PC에 연결됨: " + ip);
                 } else {
                     stopRelay();
+                    if (webFallback && pendingHash != null) {
+                        webFallback = false;
+                        toast("PC에 연결할 수 없어 웹 버전으로 엽니다");
+                        openWeb();
+                        return;
+                    }
+                    pendingHash = null;
                     if (silent) { startError = error; showStart(); }
                     else js("onConnect(false," + JSONObject.quote(error) + ")");
                 }
@@ -253,6 +262,9 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void scan(int relayPort) { MainActivity.this.scan(relayPort); }
+
+        @JavascriptInterface
+        public void target(String hash, boolean fallback) { pendingHash = hash; webFallback = fallback; }
 
         @JavascriptInterface
         public void openWeb() { runOnUiThread(MainActivity.this::openWeb); }
