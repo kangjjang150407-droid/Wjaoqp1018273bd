@@ -100,6 +100,7 @@
 
       <div id="clickBar" class="toolbar hidden">
         <button id="addPart" class="btn green" disabled>＋ 파츠로 추가</button>
+        <button id="pointMode" class="btn" title="탭할 때 포함/제외 전환">＋ 포함</button>
         <button id="undoPoint" class="btn" disabled>↶ 점 취소</button>
         <button id="clearPoints" class="btn" disabled>초기화</button>
       </div>
@@ -137,7 +138,9 @@ const MODELS = {
   panoptic: 'Xenova/detr-resnet-50-panoptic',
   sam: 'Xenova/slimsam-77-uniform',
 };
-const MAX_SIDE = 2048;
+// Phones run out of memory with full-size photos and the fp32 model, so use a lighter setup there.
+const IS_MOBILE = navigator.userAgentData?.mobile ?? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+const MAX_SIDE = IS_MOBILE ? 1280 : 2048;
 const PALETTE = ['#ff6b6b','#ffd166','#06d6a0','#4cc9f0','#b388ff','#f78c6b','#a3e635','#f472b6',
                  '#38bdf8','#facc15','#34d399','#c084fc','#fb923c','#2dd4bf','#e879f9','#60a5fa'];
 
@@ -204,6 +207,7 @@ function getDevice() {
 /* ---------------- image loading ---------------- */
 async function loadFile(file) {
   if (!file || !file.type.startsWith('image/')) { setStatus('이미지 파일만 올릴 수 있어요.'); return; }
+  if (state.busy || decoding) { setStatus('지금 분석 중이에요. 끝난 뒤에 새 이미지를 올려 주세요.'); return; }
   const url = URL.createObjectURL(file);
   const img = new Image();
   img.src = url;
@@ -402,6 +406,7 @@ function refreshButtons() {
   $('downloadAll').disabled = !has || state.busy;
   $('clearParts').disabled = !has || state.busy;
   $('runAuto').disabled = state.busy || !state.image;
+  $('newImage').disabled = state.busy;
   $('addPart').disabled = state.busy || !state.preview;
   $('undoPoint').disabled = state.busy || !state.points.length;
   $('clearPoints').disabled = state.busy || !state.points.length;
@@ -411,12 +416,15 @@ function refreshButtons() {
 async function loadAutoModel() {
   if (pipes.panoptic) return pipes.panoptic;
   setStatus('AI 모델 준비 중…', true);
-  const device = await getDevice();
-  // fp32 on purpose: the 8-bit export of this model produces degenerate masks
-  const load = async (d) => ({
-    model: await AutoModel.from_pretrained(MODELS.panoptic, { device: d, dtype: 'fp32', progress_callback: progressCallback }),
-    proc: await AutoProcessor.from_pretrained(MODELS.panoptic),
-  });
+  const device = IS_MOBILE ? 'wasm' : await getDevice();
+  // Not q8: the 8-bit export of this model produces degenerate masks.
+  // Phones get the half-size fp16 weights and a smaller input resolution.
+  const load = async (d) => {
+    const proc = await AutoProcessor.from_pretrained(MODELS.panoptic);
+    if (IS_MOBILE) (proc.image_processor ?? proc).size = { shortest_edge: 512, longest_edge: 768 };
+    const model = await AutoModel.from_pretrained(MODELS.panoptic, { device: d, dtype: IS_MOBILE ? 'fp16' : 'fp32', progress_callback: progressCallback });
+    return { model, proc };
+  };
   try { pipes.panoptic = await load(device); }
   catch (e) { if (device === 'wasm') throw e; console.warn('fallback to wasm', e); pipes.panoptic = await load('wasm'); }
   setProgress(null);
@@ -561,7 +569,7 @@ overlay.addEventListener('mousedown', async (e) => {
   if (e.button !== 0 && e.button !== 2) return;
   const r = overlay.getBoundingClientRect();
   const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
-  const label = (e.button === 2 || e.shiftKey || e.altKey) ? 0 : 1;
+  const label = (e.button === 2 || e.shiftKey || e.altKey || excludeMode) ? 0 : 1;
   state.points.push({ x, y, label });
   drawOverlay(); refreshButtons();
   await decodePoints();
@@ -574,6 +582,12 @@ $('addPart').onclick = () => {
   state.points = []; state.preview = null;
   renderParts(); drawOverlay();
   setStatus('파츠를 추가했어요. 다음 부분을 클릭하세요.');
+};
+let excludeMode = false;
+$('pointMode').onclick = () => {
+  excludeMode = !excludeMode;
+  $('pointMode').textContent = excludeMode ? '－ 제외' : '＋ 포함';
+  $('pointMode').style.borderColor = excludeMode ? 'var(--danger)' : '';
 };
 $('undoPoint').onclick = () => { state.points.pop(); decodePoints(); refreshButtons(); };
 $('clearPoints').onclick = () => { state.points = []; state.preview = null; drawOverlay(); refreshButtons(); };
@@ -588,7 +602,7 @@ function setMode(mode) {
   $('stage').classList.toggle('clickmode', mode === 'click');
   $('hint').innerHTML = mode === 'auto'
     ? '“AI로 파츠 분리하기”를 누르면 이미지 안의 사물을 자동으로 찾아 파츠로 나눕니다. 처음 실행할 때 AI 모델을 내려받느라 시간이 조금 걸려요.'
-    : '<b>왼쪽 클릭</b>: 포함할 부분 · <b>오른쪽 클릭</b>(또는 Shift+클릭): 제외할 부분. 파란 영역이 마음에 들면 “파츠로 추가”를 누르세요.';
+    : '<b>클릭/탭</b>: 포함할 부분 · <b>오른쪽 클릭</b>(또는 “＋ 포함” 버튼을 “－ 제외”로 바꾼 뒤 탭): 제외할 부분. 파란 영역이 마음에 들면 “파츠로 추가”를 누르세요.';
   drawOverlay(); refreshButtons();
   if (mode === 'click') prepareSam();
 }
