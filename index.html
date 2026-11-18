@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI 파츠 분리기</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #181b24; --line: #2a2f3d; --text: #e8eaf0; --muted: #8b92a5;
+    --accent: #6c8cff; --accent2: #3ddc97; --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { padding: 20px 28px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 22px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; padding: 20px 28px; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .drop { border: 2px dashed var(--line); border-radius: 12px; padding: 48px 16px; text-align: center; cursor: pointer;
+          color: var(--muted); transition: .15s; }
+  .drop.over, .drop:hover { border-color: var(--accent); color: var(--text); background: #1d2130; }
+  .drop strong { display: block; color: var(--text); font-size: 18px; margin-bottom: 6px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .tabs { display: inline-flex; background: #11141c; border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .tabs button { background: none; border: 0; color: var(--muted); padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .tabs button.active { background: var(--accent); color: #fff; }
+  button.btn, select { background: #232838; color: var(--text); border: 1px solid var(--line); border-radius: 9px;
+                       padding: 8px 14px; font-size: 14px; cursor: pointer; }
+  button.btn:hover:not(:disabled) { border-color: var(--accent); }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.btn.green { background: var(--accent2); border-color: var(--accent2); color: #0b1a12; font-weight: 600; }
+  button.btn:disabled { opacity: .45; cursor: not-allowed; }
+  .spacer { flex: 1; }
+  .stage { position: relative; display: flex; justify-content: center; background: #0b0d12; border-radius: 10px; overflow: hidden; }
+  .stage canvas { max-width: 100%; max-height: 72vh; display: block; }
+  #overlay { position: absolute; pointer-events: none; }
+  .stage.clickmode canvas#overlay { pointer-events: auto; cursor: crosshair; }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 2px 0; line-height: 1.5; }
+  .status { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); min-height: 22px; margin-top: 10px; }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+             animation: spin .8s linear infinite; display: none; }
+  .busy .spinner { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .progress { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 6px; display: none; }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .parts-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
+  .parts-head h2 { margin: 0; font-size: 17px; }
+  .parts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-height: 76vh; overflow: auto; }
+  .part { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #11141c; }
+  .part.hl { border-color: var(--accent); }
+  .thumb { aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+           background-color: #2a2e3a; background-image:
+             linear-gradient(45deg, #3a3f4d 25%, transparent 25%), linear-gradient(-45deg, #3a3f4d 25%, transparent 25%),
+             linear-gradient(45deg, transparent 75%, #3a3f4d 75%), linear-gradient(-45deg, transparent 75%, #3a3f4d 75%);
+           background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
+  .thumb img { max-width: 92%; max-height: 92%; }
+  .part .meta { padding: 7px 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .part .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .part .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none;
+                border: 0; color: var(--text); font-size: 12px; padding: 2px; }
+  .part .name:focus { outline: 1px solid var(--accent); border-radius: 4px; }
+  .part .icon { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 2px 4px; font-size: 14px; }
+  .part .icon:hover { color: var(--text); }
+  .part .icon.del:hover { color: var(--danger); }
+  .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 30px 10px; grid-column: 1 / -1; }
+  .hidden { display: none !important; }
+  label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧩 AI 파츠 분리기</h1>
+  <p>이미지를 올리면 AI가 사물/부위별로 잘라 투명 PNG로 만들어 줍니다. 모든 처리는 브라우저 안에서 이루어지며 이미지는 서버로 전송되지 않습니다.</p>
+</header>
+
+<main>
+  <section class="panel">
+    <div id="dropZone" class="drop">
+      <strong>이미지를 여기에 끌어다 놓거나 클릭해서 선택</strong>
+      PNG · JPG · WEBP — 붙여넣기(Ctrl+V)도 됩니다
+      <input id="fileInput" type="file" accept="image/*" hidden />
+    </div>
+
+    <div id="workspace" class="hidden">
+      <div class="toolbar">
+        <div class="tabs">
+          <button id="tabAuto" class="active">⚡ 자동 분리</button>
+          <button id="tabClick">👆 클릭으로 분리</button>
+        </div>
+        <span class="spacer"></span>
+        <label class="inline"><input id="showOverlay" type="checkbox" checked /> 마스크 표시</label>
+        <button id="newImage" class="btn">새 이미지</button>
+      </div>
+
+      <div id="autoBar" class="toolbar">
+        <button id="runAuto" class="btn primary">AI로 파츠 분리하기</button>
+      </div>
+
+      <div id="clickBar" class="toolbar hidden">
+        <button id="addPart" class="btn green" disabled>＋ 파츠로 추가</button>
+        <button id="undoPoint" class="btn" disabled>↶ 점 취소</button>
+        <button id="clearPoints" class="btn" disabled>초기화</button>
+      </div>
+
+      <div id="stage" class="stage">
+        <canvas id="base"></canvas>
+        <canvas id="overlay"></canvas>
+      </div>
+      <p id="hint" class="hint">“AI로 파츠 분리하기”를 누르면 이미지 안의 사물을 자동으로 찾아 파츠로 나눕니다. 처음 실행할 때 AI 모델을 내려받느라 시간이 조금 걸려요.</p>
+    </div>
+
+    <div id="status" class="status"><span class="spinner"></span><span id="statusText"></span></div>
+    <div id="progress" class="progress"><div></div></div>
+  </section>
+
+  <aside class="panel">
+    <div class="parts-head">
+      <h2>파츠 <span id="partCount" style="color:var(--muted);font-weight:400"></span></h2>
+      <div>
+        <button id="clearParts" class="btn" disabled>비우기</button>
+        <button id="downloadAll" class="btn primary" disabled>ZIP 저장</button>
+      </div>
+    </div>
+    <div id="parts" class="parts"><div class="empty">아직 분리된 파츠가 없습니다.</div></div>
+  </aside>
+</main>
+
+<script type="module">
+import { env, SamModel, AutoModel, AutoProcessor, RawImage, Tensor }
+  from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.1';
+
+env.allowLocalModels = false;
+
+const MODELS = {
+  panoptic: 'Xenova/detr-resnet-50-panoptic',
+  sam: 'Xenova/slimsam-77-uniform',
+};
+const MAX_SIDE = 2048;
+const PALETTE = ['#ff6b6b','#ffd166','#06d6a0','#4cc9f0','#b388ff','#f78c6b','#a3e635','#f472b6',
+                 '#38bdf8','#facc15','#34d399','#c084fc','#fb923c','#2dd4bf','#e879f9','#60a5fa'];
+
+const $ = (id) => document.getElementById(id);
+const base = $('base'), overlay = $('overlay');
+const bctx = base.getContext('2d'), octx = overlay.getContext('2d');
+
+const state = {
+  image: null,          // HTMLCanvasElement holding the (possibly downscaled) source
+  dataURL: null,
+  name: 'image',
+  parts: [],            // { id, label, score, color, mask: canvas (alpha), cutout: dataURL, bbox }
+  mode: 'auto',
+  hoverId: null,
+  busy: false,
+  // SAM
+  sam: null, samProc: null, samInputs: null, samEmb: null, samFor: null,
+  points: [], preview: null,
+};
+let partSeq = 0;
+const pipes = {};
+
+/* ---------------- status ---------------- */
+function setStatus(text, busy = false) {
+  $('statusText').textContent = text || '';
+  $('status').classList.toggle('busy', busy);
+}
+function setProgress(p) {
+  const bar = $('progress');
+  if (p == null) { bar.style.display = 'none'; return; }
+  bar.style.display = 'block';
+  bar.firstElementChild.style.width = `${Math.round(p)}%`;
+}
+const files = {};
+function progressCallback(info) {
+  if (info.status === 'progress' && info.total) {
+    files[info.file] = [info.loaded, info.total];
+    let l = 0, t = 0;
+    for (const [a, b] of Object.values(files)) { l += a; t += b; }
+    setProgress((l / t) * 100);
+    setStatus(`AI 모델 내려받는 중… ${(l / 1048576).toFixed(1)} / ${(t / 1048576).toFixed(1)} MB`, true);
+  } else if (info.status === 'ready') {
+    setProgress(null);
+  }
+}
+async function withBusy(fn) {
+  if (state.busy) return;
+  state.busy = true; refreshButtons();
+  try { await fn(); }
+  catch (e) { console.error(e); setStatus('오류가 발생했어요: ' + (e?.message || e)); setProgress(null); }
+  finally { state.busy = false; refreshButtons(); }
+}
+
+/* ---------------- device ---------------- */
+let devicePromise;
+function getDevice() {
+  devicePromise ??= (async () => {
+    try { if (navigator.gpu && await navigator.gpu.requestAdapter()) return 'webgpu'; } catch {}
+    return 'wasm';
+  })();
+  return devicePromise;
+}
+
+/* ---------------- image loading ---------------- */
+async function loadFile(file) {
+  if (!file || !file.type.startsWith('image/')) { setStatus('이미지 파일만 올릴 수 있어요.'); return; }
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  let w = img.naturalWidth, h = img.naturalHeight;
+  const s = Math.min(1, MAX_SIDE / Math.max(w, h));
+  w = Math.round(w * s); h = Math.round(h * s);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img, 0, 0, w, h);
+  URL.revokeObjectURL(url);
+
+  state.image = c;
+  state.dataURL = c.toDataURL('image/png');
+  state.name = (file.name || 'image').replace(/\.[^.]+$/, '') || 'image';
+  state.samEmb = null; state.samInputs = null; state.samFor = null;
+  state.points = []; state.preview = null;
+  clearParts();
+
+  base.width = overlay.width = w;
+  base.height = overlay.height = h;
+  bctx.drawImage(c, 0, 0);
+  syncOverlay();
+  $('dropZone').classList.add('hidden');
+  $('workspace').classList.remove('hidden');
+  setStatus(`${w}×${h} 이미지가 준비됐어요.`);
+  if (state.mode === 'click') await prepareSam();
+  refreshButtons();
+}
+
+function syncOverlay() {
+  // overlay sits on top of the base canvas with the same displayed size
+  const r = base.getBoundingClientRect(), sr = $('stage').getBoundingClientRect();
+  overlay.style.left = `${r.left - sr.left}px`;
+  overlay.style.top = `${r.top - sr.top}px`;
+  overlay.style.width = `${r.width}px`;
+  overlay.style.height = `${r.height}px`;
+}
+window.addEventListener('resize', syncOverlay);
+
+/* ---------------- masks & parts ---------------- */
+// Build an alpha-mask canvas (image-sized) from a binary mask array of size mw×mh.
+function maskCanvasFrom(data, mw, mh, test = (v) => v > 0) {
+  const m = document.createElement('canvas');
+  m.width = mw; m.height = mh;
+  const mc = m.getContext('2d');
+  const id = mc.createImageData(mw, mh);
+  for (let i = 0; i < mw * mh; i++) {
+    if (test(data[i])) { const j = i * 4; id.data[j] = id.data[j + 1] = id.data[j + 2] = 255; id.data[j + 3] = 255; }
+  }
+  mc.putImageData(id, 0, 0);
+  const W = state.image.width, H = state.image.height;
+  if (mw === W && mh === H) return m;
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const oc = out.getContext('2d');
+  oc.imageSmoothingEnabled = true;
+  oc.drawImage(m, 0, 0, W, H);
+  return out;
+}
+
+// Bilinearly upsample a low-res score map (sw×sh) to image size and threshold it.
+// (x, y) in image pixels maps to (x * kx, y * ky) in source pixels.
+function upsampleMask(src, sw, sh, kx, ky, thr) {
+  const W = state.image.width, H = state.image.height;
+  const out = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    let fy = (y + 0.5) * ky - 0.5; if (fy < 0) fy = 0; if (fy > sh - 1) fy = sh - 1;
+    const y0 = Math.floor(fy), y1 = Math.min(y0 + 1, sh - 1), dy = fy - y0;
+    for (let x = 0; x < W; x++) {
+      let fx = (x + 0.5) * kx - 0.5; if (fx < 0) fx = 0; if (fx > sw - 1) fx = sw - 1;
+      const x0 = Math.floor(fx), x1 = Math.min(x0 + 1, sw - 1), dx = fx - x0;
+      const v = (src[y0 * sw + x0] * (1 - dx) + src[y0 * sw + x1] * dx) * (1 - dy)
+              + (src[y1 * sw + x0] * (1 - dx) + src[y1 * sw + x1] * dx) * dy;
+      if (v > thr) out[y * W + x] = 1;
+    }
+  }
+  return out;
+}
+
+function tinted(mask, color) {
+  const c = document.createElement('canvas');
+  c.width = mask.width; c.height = mask.height;
+  const x = c.getContext('2d');
+  x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
+  x.globalCompositeOperation = 'destination-in';
+  x.drawImage(mask, 0, 0);
+  return c;
+}
+
+function makeCutout(mask) {
+  const W = state.image.width, H = state.image.height;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.drawImage(state.image, 0, 0);
+  x.globalCompositeOperation = 'destination-in';
+  x.drawImage(mask, 0, 0);
+  // tight bounding box
+  const a = x.getImageData(0, 0, W, H).data;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) {
+    const row = y * W * 4;
+    for (let xx = 0; xx < W; xx++) {
+      if (a[row + xx * 4 + 3] > 8) {
+        if (xx < x0) x0 = xx; if (xx > x1) x1 = xx;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+  }
+  if (x1 < 0) return null;
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  const crop = document.createElement('canvas');
+  crop.width = bw; crop.height = bh;
+  crop.getContext('2d').drawImage(c, x0, y0, bw, bh, 0, 0, bw, bh);
+  return { url: crop.toDataURL('image/png'), bbox: [x0, y0, bw, bh], area: countAlpha(a) };
+}
+function countAlpha(a) { let n = 0; for (let i = 3; i < a.length; i += 4) if (a[i] > 8) n++; return n; }
+
+function addPart(label, score, mask) {
+  const cut = makeCutout(mask);
+  if (!cut) return false;
+  const color = PALETTE[partSeq % PALETTE.length];
+  state.parts.push({ id: ++partSeq, label, score, color, mask, tint: tinted(mask, color), cutout: cut.url, bbox: cut.bbox, area: cut.area });
+  return true;
+}
+
+function clearParts() { state.parts = []; renderParts(); drawOverlay(); }
+
+/* ---------------- rendering ---------------- */
+function drawOverlay() {
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!state.image) return;
+  if ($('showOverlay').checked) {
+    for (const p of state.parts) {
+      octx.globalAlpha = state.hoverId == null ? 0.45 : (p.id === state.hoverId ? 0.7 : 0.12);
+      octx.drawImage(p.tint, 0, 0);
+    }
+  }
+  octx.globalAlpha = 1;
+  if (state.mode === 'click') {
+    if (state.preview) {
+      octx.globalAlpha = 0.55;
+      octx.drawImage(state.preview.tint, 0, 0);
+      octx.globalAlpha = 1;
+    }
+    const r = Math.max(5, Math.round(Math.max(overlay.width, overlay.height) / 140));
+    for (const pt of state.points) {
+      octx.beginPath();
+      octx.arc(pt.x * overlay.width, pt.y * overlay.height, r, 0, Math.PI * 2);
+      octx.fillStyle = pt.label === 1 ? '#3ddc97' : '#ff6b6b';
+      octx.fill();
+      octx.lineWidth = Math.max(2, r / 3); octx.strokeStyle = '#fff'; octx.stroke();
+    }
+  }
+}
+
+function renderParts() {
+  const box = $('parts');
+  box.innerHTML = '';
+  $('partCount').textContent = state.parts.length ? `(${state.parts.length})` : '';
+  if (!state.parts.length) {
+    box.innerHTML = '<div class="empty">아직 분리된 파츠가 없습니다.</div>';
+  }
+  for (const p of state.parts) {
+    const el = document.createElement('div');
+    el.className = 'part';
+    el.innerHTML = `
+      <div class="thumb"><img alt=""></div>
+      <div class="meta">
+        <span class="dot" style="background:${p.color}"></span>
+        <input class="name" spellcheck="false">
+        <button class="icon dl" title="PNG 저장">⬇</button>
+        <button class="icon del" title="삭제">✕</button>
+      </div>`;
+    el.querySelector('img').src = p.cutout;
+    const name = el.querySelector('.name');
+    name.value = p.label;
+    name.title = p.score != null ? `${p.label} · 신뢰도 ${(p.score * 100).toFixed(0)}%` : p.label;
+    name.addEventListener('change', () => { p.label = name.value.trim() || p.label; });
+    el.querySelector('.dl').onclick = () => download(p.cutout, `${fileSafe(state.name)}_${fileSafe(p.label)}_${p.id}.png`);
+    el.querySelector('.del').onclick = () => {
+      state.parts = state.parts.filter((q) => q !== p);
+      if (state.hoverId === p.id) state.hoverId = null;
+      renderParts(); drawOverlay();
+    };
+    el.addEventListener('mouseenter', () => { state.hoverId = p.id; el.classList.add('hl'); drawOverlay(); });
+    el.addEventListener('mouseleave', () => { state.hoverId = null; el.classList.remove('hl'); drawOverlay(); });
+    box.appendChild(el);
+  }
+  refreshButtons();
+}
+
+function refreshButtons() {
+  const has = state.parts.length > 0;
+  $('downloadAll').disabled = !has || state.busy;
+  $('clearParts').disabled = !has || state.busy;
+  $('runAuto').disabled = state.busy || !state.image;
+  $('addPart').disabled = state.busy || !state.preview;
+  $('undoPoint').disabled = state.busy || !state.points.length;
+  $('clearPoints').disabled = state.busy || !state.points.length;
+}
+
+/* ---------------- auto segmentation ---------------- */
+async function loadAutoModel() {
+  if (pipes.panoptic) return pipes.panoptic;
+  setStatus('AI 모델 준비 중…', true);
+  const device = await getDevice();
+  // fp32 on purpose: the 8-bit export of this model produces degenerate masks
+  const load = async (d) => ({
+    model: await AutoModel.from_pretrained(MODELS.panoptic, { device: d, dtype: 'fp32', progress_callback: progressCallback }),
+    proc: await AutoProcessor.from_pretrained(MODELS.panoptic),
+  });
+  try { pipes.panoptic = await load(device); }
+  catch (e) { if (device === 'wasm') throw e; console.warn('fallback to wasm', e); pipes.panoptic = await load('wasm'); }
+  setProgress(null);
+  return pipes.panoptic;
+}
+
+// Panoptic segmentation with DETR. Post-processing follows the reference (Python) implementation:
+// each pixel goes to the query with the highest score*prob, but only if that query's prob >= 0.5.
+async function segmentPanoptic({ model, proc }) {
+  const raw = await RawImage.fromURL(state.dataURL);
+  const inputs = await proc(raw);
+  const { logits, pred_masks } = await model(inputs);
+  const [, Q, C1] = logits.dims;
+  const [, , mh, mw] = pred_masks.dims;
+  const L = logits.data, M = pred_masks.data, N = mh * mw;
+  const id2label = model.config.id2label;
+  const THRESH = 0.7, MASK_T = 0.5, OVERLAP_T = 0.8;
+
+  const kept = [];
+  for (let q = 0; q < Q; q++) {
+    let mx = -Infinity;
+    for (let c = 0; c < C1; c++) mx = Math.max(mx, L[q * C1 + c]);
+    let sum = 0, best = 0, bestP = 0;
+    for (let c = 0; c < C1; c++) {
+      const e = Math.exp(L[q * C1 + c] - mx); sum += e;
+      if (c < C1 - 1 && e > bestP) { bestP = e; best = c; }
+    }
+    const score = bestP / sum;
+    if (score > THRESH) kept.push({ q, label: id2label[best] ?? `class ${best}`, score });
+  }
+  // the model's input may be padded; masks cover pixel_values, the image occupies its top-left part
+  const [, , ph, pw] = inputs.pixel_values.dims;
+  const [rh, rw] = inputs.reshaped_input_sizes?.[0] ?? [ph, pw];
+  const sig = (v) => 1 / (1 + Math.exp(-v));
+  const owner = new Int16Array(N).fill(-1), bestV = new Float32Array(N);
+  kept.forEach((k, i) => {
+    const off = k.q * N;
+    for (let j = 0; j < N; j++) {
+      const v = sig(M[off + j]) * k.score;
+      if (v > bestV[j]) { bestV[j] = v; owner[j] = i; }
+    }
+  });
+  const results = [];
+  kept.forEach((k, i) => {
+    const off = k.q * N, f = new Float32Array(N);
+    let area = 0, orig = 0;
+    for (let j = 0; j < N; j++) {
+      const p = sig(M[off + j]);
+      if (p >= MASK_T) { orig++; if (owner[j] === i) { f[j] = 1; area++; } }
+    }
+    if (!area || area / orig <= OVERLAP_T) return;
+    const W = state.image.width, H = state.image.height;
+    const kx = (rw / W) * (mw / pw), ky = (rh / H) * (mh / ph);
+    results.push({ label: k.label, score: k.score, data: upsampleMask(f, mw, mh, kx, ky, 0.5), w: W, h: H });
+  });
+  return results;
+}
+
+async function runAuto() {
+  const m = await loadAutoModel();
+  setStatus('이미지를 분석하는 중…', true);
+  await new Promise((r) => setTimeout(r, 30));
+  const t0 = performance.now();
+  const results = await segmentPanoptic(m);
+
+  // replace previous auto-generated parts, keep manual ones
+  state.parts = state.parts.filter((p) => p.manual);
+  const minArea = state.image.width * state.image.height * 0.0015;
+  const counts = {};
+  results.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  for (const r of results) {
+    const mask = maskCanvasFrom(r.data, r.w, r.h);
+    const name = r.label || 'part';
+    counts[name] = (counts[name] || 0) + 1;
+    const label = counts[name] > 1 ? `${name} ${counts[name]}` : name;
+    const before = state.parts.length;
+    if (addPart(label, r.score ?? null, mask) && state.parts[state.parts.length - 1].area < minArea) {
+      state.parts.length = before; // drop tiny fragments
+    }
+  }
+  renderParts(); drawOverlay();
+  const sec = ((performance.now() - t0) / 1000).toFixed(1);
+  setStatus(state.parts.length
+    ? `${state.parts.length}개의 파츠를 찾았어요 (${sec}초). 부족하면 “클릭으로 분리”로 직접 추가해 보세요.`
+    : '자동으로 찾은 파츠가 없어요. “클릭으로 분리”로 직접 골라 보세요.');
+}
+
+/* ---------------- click segmentation (SlimSAM) ---------------- */
+async function prepareSam() {
+  if (!state.image || state.samFor === state.dataURL) return;
+  await withBusy(async () => {
+    if (!state.sam) {
+      setStatus('클릭 분리용 AI 모델 준비 중…', true);
+      state.samProc = await AutoProcessor.from_pretrained(MODELS.sam, { progress_callback: progressCallback });
+      // the 8-bit SlimSAM export gives cleaner masks than fp32 and runs reliably on WASM
+      state.sam = await SamModel.from_pretrained(MODELS.sam, { device: 'wasm', dtype: 'q8', progress_callback: progressCallback });
+      setProgress(null);
+    }
+    setStatus('이미지를 이해하는 중… (한 번만 하면 돼요)', true);
+    await new Promise((r) => setTimeout(r, 30));
+    const raw = await RawImage.fromURL(state.dataURL);
+    state.samInputs = await state.samProc(raw);
+    state.samEmb = await state.sam.get_image_embeddings(state.samInputs);
+    state.samFor = state.dataURL;
+    setStatus('분리하고 싶은 부분을 클릭하세요.');
+  });
+}
+
+let decoding = false, pending = false;
+async function decodePoints() {
+  if (decoding) { pending = true; return; }
+  if (!state.samEmb || !state.points.length) { state.preview = null; drawOverlay(); refreshButtons(); return; }
+  decoding = true;
+  try {
+    const [rh, rw] = state.samInputs.reshaped_input_sizes[0];
+    const n = state.points.length;
+    const input_points = new Tensor('float32', state.points.flatMap((p) => [p.x * rw, p.y * rh]), [1, 1, n, 2]);
+    const input_labels = new Tensor('int64', state.points.map((p) => BigInt(p.label)), [1, 1, n]);
+    const { pred_masks, iou_scores } = await state.sam({ ...state.samEmb, input_points, input_labels });
+    const scores = iou_scores.data;
+    let best = 0;
+    for (let i = 1; i < scores.length; i++) if (scores[i] > scores[best]) best = i;
+    // pred_masks: [1, 1, 3, 256, 256] logits covering the padded 1024×1024 model input
+    const [, , , mh, mw] = pred_masks.dims;
+    const logits = pred_masks.data.subarray(best * mh * mw, (best + 1) * mh * mw);
+    const pad = state.samProc.pad_size ?? { width: 1024, height: 1024 };
+    const W = state.image.width, H = state.image.height;
+    const data = upsampleMask(logits, mw, mh, (rw / W) * (mw / pad.width), (rh / H) * (mh / pad.height), 0);
+    const mask = maskCanvasFrom(data, W, H);
+    state.preview = { mask, tint: tinted(mask, '#6c8cff'), score: scores[best] };
+  } finally {
+    decoding = false;
+  }
+  drawOverlay(); refreshButtons();
+  if (pending) { pending = false; decodePoints(); }
+}
+
+overlay.addEventListener('contextmenu', (e) => { if (state.mode === 'click') e.preventDefault(); });
+overlay.addEventListener('mousedown', async (e) => {
+  if (state.mode !== 'click' || state.busy) return;
+  if (state.samFor !== state.dataURL) { prepareSam(); return; }
+  if (e.button !== 0 && e.button !== 2) return;
+  const r = overlay.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+  const label = (e.button === 2 || e.shiftKey || e.altKey) ? 0 : 1;
+  state.points.push({ x, y, label });
+  drawOverlay(); refreshButtons();
+  await decodePoints();
+});
+
+$('addPart').onclick = () => {
+  if (!state.preview) return;
+  const n = state.parts.filter((p) => p.manual).length + 1;
+  if (addPart(`파츠 ${n}`, state.preview.score, state.preview.mask)) state.parts[state.parts.length - 1].manual = true;
+  state.points = []; state.preview = null;
+  renderParts(); drawOverlay();
+  setStatus('파츠를 추가했어요. 다음 부분을 클릭하세요.');
+};
+$('undoPoint').onclick = () => { state.points.pop(); decodePoints(); refreshButtons(); };
+$('clearPoints').onclick = () => { state.points = []; state.preview = null; drawOverlay(); refreshButtons(); };
+
+/* ---------------- mode switching ---------------- */
+function setMode(mode) {
+  state.mode = mode;
+  $('tabAuto').classList.toggle('active', mode === 'auto');
+  $('tabClick').classList.toggle('active', mode === 'click');
+  $('autoBar').classList.toggle('hidden', mode !== 'auto');
+  $('clickBar').classList.toggle('hidden', mode !== 'click');
+  $('stage').classList.toggle('clickmode', mode === 'click');
+  $('hint').innerHTML = mode === 'auto'
+    ? '“AI로 파츠 분리하기”를 누르면 이미지 안의 사물을 자동으로 찾아 파츠로 나눕니다. 처음 실행할 때 AI 모델을 내려받느라 시간이 조금 걸려요.'
+    : '<b>왼쪽 클릭</b>: 포함할 부분 · <b>오른쪽 클릭</b>(또는 Shift+클릭): 제외할 부분. 파란 영역이 마음에 들면 “파츠로 추가”를 누르세요.';
+  drawOverlay(); refreshButtons();
+  if (mode === 'click') prepareSam();
+}
+$('tabAuto').onclick = () => setMode('auto');
+$('tabClick').onclick = () => setMode('click');
+
+/* ---------------- downloads ---------------- */
+const fileSafe = (s) => String(s).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60);
+function download(url, name) {
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+}
+$('downloadAll').onclick = () => withBusy(async () => {
+  setStatus('ZIP 파일을 만드는 중…', true);
+  const { default: JSZip } = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
+  const zip = new JSZip();
+  const used = new Set();
+  for (const p of state.parts) {
+    let n = fileSafe(p.label) || 'part';
+    while (used.has(n)) n += `_${p.id}`;
+    used.add(n);
+    zip.file(`${n}.png`, p.cutout.split(',')[1], { base64: true });
+  }
+  // also a JSON with positions, handy for reassembling the parts
+  zip.file('layout.json', JSON.stringify({
+    source: { width: state.image.width, height: state.image.height },
+    parts: state.parts.map((p) => ({ label: p.label, x: p.bbox[0], y: p.bbox[1], width: p.bbox[2], height: p.bbox[3], score: p.score })),
+  }, null, 2));
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(blob);
+  download(url, `${fileSafe(state.name)}_parts.zip`);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  setStatus(`${state.parts.length}개 파츠를 ZIP으로 저장했어요.`);
+});
+
+/* ---------------- wiring ---------------- */
+$('runAuto').onclick = () => withBusy(runAuto);
+$('clearParts').onclick = clearParts;
+$('showOverlay').onchange = drawOverlay;
+$('newImage').onclick = () => $('fileInput').click();
+const dz = $('dropZone');
+dz.onclick = () => $('fileInput').click();
+$('fileInput').onchange = (e) => { loadFile(e.target.files[0]); e.target.value = ''; };
+['dragenter', 'dragover'].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); dz.classList.add('over'); }));
+['dragleave', 'drop'].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); dz.classList.remove('over'); }));
+document.addEventListener('drop', (e) => { const f = e.dataTransfer?.files?.[0]; if (f) loadFile(f); });
+document.addEventListener('paste', (e) => {
+  const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
+  if (item) loadFile(item.getAsFile());
+});
+new ResizeObserver(syncOverlay).observe(base);
+refreshButtons();
+setStatus('');
+</script>
+</body>
+</html>
